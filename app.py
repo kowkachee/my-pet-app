@@ -42,20 +42,24 @@ else:
     loaded_service_df['服務金額'] = pd.to_numeric(loaded_service_df['服務金額'], errors='coerce').fillna(0).astype(int)
     st.session_state.service_db = loaded_service_df.reindex(columns=SERVICE_COLUMNS)
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="🐾 寵物美容管理系統", page_icon="🐶")
 
-# ==================== ✨ 網址參數超連結跳轉核心邏輯 ✨ ====================
+# ==================== ✨ 網址參數超連結跳轉核心邏輯 (防崩潰優化版) ✨ ====================
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "📝 新增客戶主檔案"
+if 'target_chip' not in st.session_state:
+    st.session_state.target_chip = ""
+
+# 讀取網址參數
 query_params = st.query_params
-
 if "chip" in query_params:
-    st.session_state.current_page = "🔍 晶片詳細查詢"
-    st.session_state.target_chip = str(query_params["chip"])
-    st.query_params.clear()
-else:
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = "📝 新增客戶主檔案"
-    if 'target_chip' not in st.session_state:
-        st.session_state.target_chip = ""
+    captured_chip = str(query_params["chip"]).strip()
+    # 只有當目標真的改變時，才進行狀態變更，防止無限循環與 React 節點衝突
+    if st.session_state.target_chip != captured_chip or st.session_state.current_page != "🔍 晶片詳細查詢":
+        st.session_state.current_page = "🔍 晶片詳細查詢"
+        st.session_state.target_chip = captured_chip
+        st.query_params.clear()
+        st.rerun()
 
 # 🌐 側邊欄導覽選單
 st.sidebar.title("🐾 導覽選單")
@@ -83,7 +87,7 @@ if selected_page != st.session_state.current_page:
 
 page = st.session_state.current_page
 
-# 🛠️ 輔助函式：利用 Streamlit 官方標準的 LinkColumn 機制建立「不崩潰超連結」表格
+# 🛠️ 輔助函式：建立「安全跳轉」表格
 def show_safe_link_table(df, table_key):
     display_df = df.copy()
     
@@ -130,21 +134,17 @@ if page == "📝 新增客戶主檔案":
         uploaded_files = st.file_uploader("📸 上傳寵物照片 (最多 3 張)", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
     if st.button("💾 永久儲存基本檔案", use_container_width=True):
-        # 檢查必填項目（名字與手機號碼）
         if not pet_name.strip() or not owner_phone.strip():
             st.warning("⚠️ 寵物名字與主人手機為必填欄位！")
         else:
-            # ✨ 核心修正邏輯：如果晶片號碼留空，自動以「寵物名字_主人手機」作為代用晶片號碼
             final_chip = chip_number.strip()
             if not final_chip:
                 final_chip = f"{pet_name.strip()}_{owner_phone.strip()}"
                 st.info(f"💡 偵測到晶片號碼留空，系統已自動生成識別碼：`{final_chip}`")
 
-            # 檢查這個識別碼是否已經存在於資料庫中
             if final_chip in st.session_state.pet_db['晶片號碼'].astype(str).values:
                 st.error(f"❌ 錯誤：識別碼或晶片號碼 `{final_chip}` 已存在於系統中！")
             else:
-                # 處理照片儲存
                 photo_filenames = ["none", "none", "none"]
                 for i, current_file in enumerate(uploaded_files[:3]):
                     file_ext = current_file.name.split(".")[-1]
@@ -190,7 +190,7 @@ elif page == "🔍 晶片詳細查詢":
         default_idx = 0
         if st.session_state.target_chip in chip_list:
             default_idx = chip_list.index(st.session_state.target_chip)
-            st.session_state.target_chip = "" 
+            # 留在當前狀態，但不清除 target_chip，防止頁面選單刷新時丟失定位
 
         search_chip = st.selectbox("請選擇要查詢的寵物晶片號碼 / 系統識別碼：", chip_list, index=default_idx)
         pet_info = st.session_state.pet_db[st.session_state.pet_db['晶片號碼'].astype(str) == search_chip].iloc[0]
